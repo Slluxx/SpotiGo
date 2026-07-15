@@ -1,4 +1,4 @@
-# SpotiGo
+# SpotiGo - no BS Spotify player
 
 An Android app that lets you control and play Spotify through a custom native player shell, using a JavaScript event bridge to connect native Android controls with the web player.
 
