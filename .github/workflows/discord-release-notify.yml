@@ -1,0 +1,67 @@
+name: Notify Discord on Release
+
+on:
+  release:
+    types: [published, edited, prereleased, released]
+
+jobs:
+  notify-discord:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send release info to Discord
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          RELEASE_NAME: ${{ github.event.release.name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_URL: ${{ github.event.release.html_url }}
+          RELEASE_BODY: ${{ github.event.release.body }}
+          RELEASE_AUTHOR: ${{ github.event.release.author.login }}
+          RELEASE_ACTION: ${{ github.event.action }}
+          REPO_NAME: ${{ github.repository }}
+          IS_PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          # Truncate body to avoid Discord's 4096 char embed description limit
+          BODY=$(echo "$RELEASE_BODY" | head -c 3800)
+          if [ ${#RELEASE_BODY} -gt 3800 ]; then
+            BODY="${BODY}...\n\n[Read more](${RELEASE_URL})"
+          fi
+
+          # Escape double quotes and backslashes for valid JSON
+          BODY_ESCAPED=$(echo "$BODY" | sed 's/\\/\\\\/g; s/"/\\"/g' | awk '{printf "%s\\n", $0}')
+          NAME_ESCAPED=$(echo "${RELEASE_NAME:-$RELEASE_TAG}" | sed 's/\\/\\\\/g; s/"/\\"/g')
+
+          if [ "$IS_PRERELEASE" = "true" ]; then
+            COLOR=15105570
+          else
+            COLOR=3066993
+          fi
+
+          case "$RELEASE_ACTION" in
+            published) TITLE_PREFIX="🚀 New Release" ;;
+            edited) TITLE_PREFIX="✏️ Release Updated" ;;
+            prereleased) TITLE_PREFIX="🧪 New Pre-release" ;;
+            *) TITLE_PREFIX="📦 Release" ;;
+          esac
+
+          JSON_PAYLOAD=$(cat <<EOF
+          {
+            "embeds": [
+              {
+                "title": "${TITLE_PREFIX}: ${NAME_ESCAPED}",
+                "url": "${RELEASE_URL}",
+                "description": "${BODY_ESCAPED}",
+                "color": ${COLOR},
+                "fields": [
+                  { "name": "Tag", "value": "${RELEASE_TAG}", "inline": true },
+                  { "name": "Author", "value": "${RELEASE_AUTHOR}", "inline": true },
+                  { "name": "Repository", "value": "${REPO_NAME}", "inline": true }
+                ]
+              }
+            ]
+          }
+          EOF
+          )
+
+          curl -sf -H "Content-Type: application/json" \
+               -d "$JSON_PAYLOAD" \
+               "$DISCORD_WEBHOOK"
