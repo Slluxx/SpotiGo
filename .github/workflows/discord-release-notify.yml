@@ -21,11 +21,9 @@ jobs:
           IS_PRERELEASE: ${{ github.event.release.prerelease }}
         run: |
           # Truncate body to avoid Discord's 4096 char embed description limit
-          BODY=$(printf '%s' "$RELEASE_BODY" | head -c 3800)
-          if [ "${#RELEASE_BODY}" -gt 3800 ]; then
-            BODY="${BODY}...
-
-[Read more](${RELEASE_URL})"
+          BODY=$(echo "$RELEASE_BODY" | head -c 3800)
+          if [ ${#RELEASE_BODY} -gt 3800 ]; then
+            BODY=$(printf '%s...\n\n[Read more](%s)' "$BODY" "$RELEASE_URL")
           fi
 
           if [ "$IS_PRERELEASE" = "true" ]; then
@@ -41,12 +39,11 @@ jobs:
             *) TITLE_PREFIX="📦 Release" ;;
           esac
 
-          NAME="${RELEASE_NAME:-$RELEASE_TAG}"
+          TITLE="${TITLE_PREFIX}: ${RELEASE_NAME:-$RELEASE_TAG}"
 
-          # Build JSON with jq so multi-line bodies, quotes, and special
-          # characters are always escaped correctly (no manual sed/awk escaping).
+          # jq handles all JSON escaping (quotes, newlines, backslashes, unicode) safely
           JSON_PAYLOAD=$(jq -n \
-            --arg title "${TITLE_PREFIX}: ${NAME}" \
+            --arg title "$TITLE" \
             --arg url "$RELEASE_URL" \
             --arg desc "$BODY" \
             --argjson color "$COLOR" \
@@ -54,35 +51,29 @@ jobs:
             --arg author "$RELEASE_AUTHOR" \
             --arg repo "$REPO_NAME" \
             '{
-              embeds: [
-                {
-                  title: $title,
-                  url: $url,
-                  description: $desc,
-                  color: $color,
-                  fields: [
-                    { name: "Tag", value: $tag, inline: true },
-                    { name: "Author", value: $author, inline: true },
-                    { name: "Repository", value: $repo, inline: true }
-                  ]
-                }
-              ]
+              embeds: [{
+                title: $title,
+                url: $url,
+                description: $desc,
+                color: $color,
+                fields: [
+                  {name: "Tag", value: $tag, inline: true},
+                  {name: "Author", value: $author, inline: true},
+                  {name: "Repository", value: $repo, inline: true}
+                ]
+              }]
             }')
-
-          echo "----- Payload being sent -----"
-          echo "$JSON_PAYLOAD"
-          echo "-------------------------------"
 
           HTTP_RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
                -H "Content-Type: application/json" \
                -d "$JSON_PAYLOAD" \
                "$DISCORD_WEBHOOK")
 
-          HTTP_BODY=$(echo "$HTTP_RESPONSE" | sed -e '/HTTP_STATUS:/d')
-          HTTP_STATUS=$(echo "$HTTP_RESPONSE" | tr -d '\n' | sed -e 's/.*HTTP_STATUS://')
+          HTTP_STATUS=$(echo "$HTTP_RESPONSE" | tail -n1 | sed -e 's/.*HTTP_STATUS://')
+          HTTP_BODY=$(echo "$HTTP_RESPONSE" | sed '$d')
 
           echo "Discord response: $HTTP_BODY"
-          echo "Discord status: $HTTP_STATUS"
+          echo "Status: $HTTP_STATUS"
 
           if [ "$HTTP_STATUS" -lt 200 ] || [ "$HTTP_STATUS" -ge 300 ]; then
             exit 1
