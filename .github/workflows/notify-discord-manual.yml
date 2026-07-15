@@ -1,0 +1,31 @@
+name: Notify Discord on Release (Manual)
+ 
+on:
+  workflow_dispatch:
+ 
+jobs:
+  notify-discord:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get latest release
+        id: latest_release
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data } = await github.rest.repos.getLatestRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo
+            })
+            core.setOutput('name', data.name || data.tag_name)
+            core.setOutput('body', data.body || '')
+            core.setOutput('url', data.html_url)
+ 
+      - name: Send release info to Discord
+        uses: tsickert/discord-webhook@v6.0.0
+        with:
+          webhook-url: ${{ secrets.DISCORD_WEBHOOK }}
+          embed-title: ${{ steps.latest_release.outputs.name }}
+          embed-description: ${{ steps.latest_release.outputs.body }}
+          embed-url: ${{ steps.latest_release.outputs.url }}
+          embed-color: 3066993
+ 
