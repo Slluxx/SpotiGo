@@ -1,9 +1,9 @@
-name: Notify Discord
- 
+name: Notify Discord on Release
+
 on:
   release:
     types: [published, edited]
- 
+
 jobs:
   notify-discord:
     runs-on: ubuntu-latest
@@ -12,7 +12,12 @@ jobs:
         uses: tsickert/discord-webhook@v6.0.0
         with:
           webhook-url: ${{ secrets.DISCORD_WEBHOOK }}
-          embed-title: ${{ github.event.release.name || github.event.release.tag_name }}
-          embed-description: ${{ github.event.release.body }}
+          content: "🚀 **New release available!**"
+          embed-title: "${{ github.event.release.name || github.event.release.tag_name }}"
+          embed-description: |
+            ${{ github.event.release.body }}
+
+            📥 [**Download it here**](${{ github.event.release.html_url }})
           embed-url: ${{ github.event.release.html_url }}
           embed-color: 3066993
+          embed-footer-text: "Thanks for using SpotiGo!"
