@@ -24,7 +24,7 @@ jobs:
         uses: tsickert/discord-webhook@v6.0.0
         with:
           webhook-url: ${{ secrets.DISCORD_WEBHOOK }}
-          content: "🚀 **New release available!**"
+          content: "@everyone 🚀 **New release available!**"
           embed-title: "${{ steps.latest_release.outputs.name }}"
           embed-description: |
             ${{ steps.latest_release.outputs.body }}
