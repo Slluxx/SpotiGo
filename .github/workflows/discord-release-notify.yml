@@ -2,8 +2,7 @@ name: Notify Discord on Release
 
 on:
   release:
-    types: [published, edited, prereleased, released]
-  workflow_dispatch:
+    types: [published, edited]
 
 jobs:
   notify-discord:
@@ -19,40 +18,34 @@ jobs:
           RELEASE_AUTHOR: ${{ github.event.release.author.login }}
           RELEASE_ACTION: ${{ github.event.action }}
           REPO_NAME: ${{ github.repository }}
-          IS_PRERELEASE: ${{ github.event.release.prerelease }}
         run: |
-          # Truncate body to avoid Discord's 4096 char embed description limit
-          BODY=$(echo "$RELEASE_BODY" | head -c 3800)
-          if [ ${#RELEASE_BODY} -gt 3800 ]; then
-            BODY="${BODY}...\n\n[Read more](${RELEASE_URL})"
-          fi
+          TITLE="${RELEASE_NAME:-$RELEASE_TAG} (${RELEASE_ACTION})"
 
-          # Determine color based on prerelease status
-          if [ "$IS_PRERELEASE" = "true" ]; then
-            COLOR=15105570
-          else
-            COLOR=3066993
-          fi
-
-          # Determine title prefix based on action
-          case "$RELEASE_ACTION" in
-            published) TITLE_PREFIX="🚀 New Release" ;;
-            edited) TITLE_PREFIX="✏️ Release Updated" ;;
-            prereleased) TITLE_PREFIX="🧪 New Pre-release" ;;
-            *) TITLE_PREFIX="📦 Release" ;;
-          esac
-
-          # Use jq to properly escape all JSON values
-          JSON_PAYLOAD=$(jq -n \
-            --arg title "${TITLE_PREFIX}: ${RELEASE_NAME:-$RELEASE_TAG}" \
+          jq -n \
+            --arg title "$TITLE" \
             --arg url "$RELEASE_URL" \
-            --arg description "$BODY" \
-            --arg color "$COLOR" \
+            --arg desc "$RELEASE_BODY" \
             --arg tag "$RELEASE_TAG" \
             --arg author "$RELEASE_AUTHOR" \
             --arg repo "$REPO_NAME" \
-            '{embeds: [{title: $title, url: $url, description: $description, color: ($color | tonumber), fields: [{name: "Tag", value: $tag, inline: true}, {name: "Author", value: $author, inline: true}, {name: "Repository", value: $repo, inline: true}]}]}')
+            '{
+              embeds: [{
+                title: $title,
+                url: $url,
+                description: $desc,
+                color: 3066993,
+                fields: [
+                  {name: "Tag", value: $tag, inline: true},
+                  {name: "Author", value: $author, inline: true},
+                  {name: "Repository", value: $repo, inline: true}
+                ]
+              }]
+            }' > payload.json
 
-          curl -sf -H "Content-Type: application/json" \
-               -d "$JSON_PAYLOAD" \
-               "$DISCORD_WEBHOOK"
+          curl -s -o response.txt -w "%{http_code}" \
+            -H "Content-Type: application/json" \
+            -d @payload.json \
+            "$DISCORD_WEBHOOK" > status.txt
+
+          echo "Status: $(cat status.txt)"
+          echo "Response: $(cat response.txt)"
