@@ -3,7 +3,6 @@ name: Notify Discord on Release
 on:
   release:
     types: [published, edited, prereleased, released]
-  workflow_dispatch:
 
 jobs:
   notify-discord:
@@ -22,14 +21,12 @@ jobs:
           IS_PRERELEASE: ${{ github.event.release.prerelease }}
         run: |
           # Truncate body to avoid Discord's 4096 char embed description limit
-          BODY=$(echo "$RELEASE_BODY" | head -c 3800)
-          if [ ${#RELEASE_BODY} -gt 3800 ]; then
-            BODY="${BODY}...\n\n[Read more](${RELEASE_URL})"
-          fi
+          BODY=$(printf '%s' "$RELEASE_BODY" | head -c 3800)
+          if [ "${#RELEASE_BODY}" -gt 3800 ]; then
+            BODY="${BODY}...
 
-          # Escape double quotes and backslashes for valid JSON
-          BODY_ESCAPED=$(echo "$BODY" | sed 's/\\/\\\\/g; s/"/\\"/g' | awk '{printf "%s\\n", $0}')
-          NAME_ESCAPED=$(echo "${RELEASE_NAME:-$RELEASE_TAG}" | sed 's/\\/\\\\/g; s/"/\\"/g')
+[Read more](${RELEASE_URL})"
+          fi
 
           if [ "$IS_PRERELEASE" = "true" ]; then
             COLOR=15105570
@@ -44,25 +41,49 @@ jobs:
             *) TITLE_PREFIX="📦 Release" ;;
           esac
 
-          JSON_PAYLOAD=$(cat <<EOF
-          {
-            "embeds": [
-              {
-                "title": "${TITLE_PREFIX}: ${NAME_ESCAPED}",
-                "url": "${RELEASE_URL}",
-                "description": "${BODY_ESCAPED}",
-                "color": ${COLOR},
-                "fields": [
-                  { "name": "Tag", "value": "${RELEASE_TAG}", "inline": true },
-                  { "name": "Author", "value": "${RELEASE_AUTHOR}", "inline": true },
-                  { "name": "Repository", "value": "${REPO_NAME}", "inline": true }
-                ]
-              }
-            ]
-          }
-          EOF
-          )
+          NAME="${RELEASE_NAME:-$RELEASE_TAG}"
 
-          curl -sf -H "Content-Type: application/json" \
+          # Build JSON with jq so multi-line bodies, quotes, and special
+          # characters are always escaped correctly (no manual sed/awk escaping).
+          JSON_PAYLOAD=$(jq -n \
+            --arg title "${TITLE_PREFIX}: ${NAME}" \
+            --arg url "$RELEASE_URL" \
+            --arg desc "$BODY" \
+            --argjson color "$COLOR" \
+            --arg tag "$RELEASE_TAG" \
+            --arg author "$RELEASE_AUTHOR" \
+            --arg repo "$REPO_NAME" \
+            '{
+              embeds: [
+                {
+                  title: $title,
+                  url: $url,
+                  description: $desc,
+                  color: $color,
+                  fields: [
+                    { name: "Tag", value: $tag, inline: true },
+                    { name: "Author", value: $author, inline: true },
+                    { name: "Repository", value: $repo, inline: true }
+                  ]
+                }
+              ]
+            }')
+
+          echo "----- Payload being sent -----"
+          echo "$JSON_PAYLOAD"
+          echo "-------------------------------"
+
+          HTTP_RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
+               -H "Content-Type: application/json" \
                -d "$JSON_PAYLOAD" \
-               "$DISCORD_WEBHOOK"
+               "$DISCORD_WEBHOOK")
+
+          HTTP_BODY=$(echo "$HTTP_RESPONSE" | sed -e '/HTTP_STATUS:/d')
+          HTTP_STATUS=$(echo "$HTTP_RESPONSE" | tr -d '\n' | sed -e 's/.*HTTP_STATUS://')
+
+          echo "Discord response: $HTTP_BODY"
+          echo "Discord status: $HTTP_STATUS"
+
+          if [ "$HTTP_STATUS" -lt 200 ] || [ "$HTTP_STATUS" -ge 300 ]; then
+            exit 1
+          fi
