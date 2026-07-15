@@ -1,51 +1,18 @@
 name: Notify Discord on Release
-
+ 
 on:
   release:
     types: [published, edited]
-
+ 
 jobs:
   notify-discord:
     runs-on: ubuntu-latest
     steps:
       - name: Send release info to Discord
-        env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
-          RELEASE_NAME: ${{ github.event.release.name }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-          RELEASE_URL: ${{ github.event.release.html_url }}
-          RELEASE_BODY: ${{ github.event.release.body }}
-          RELEASE_AUTHOR: ${{ github.event.release.author.login }}
-          RELEASE_ACTION: ${{ github.event.action }}
-          REPO_NAME: ${{ github.repository }}
-        run: |
-          TITLE="${RELEASE_NAME:-$RELEASE_TAG} (${RELEASE_ACTION})"
-
-          jq -n \
-            --arg title "$TITLE" \
-            --arg url "$RELEASE_URL" \
-            --arg desc "$RELEASE_BODY" \
-            --arg tag "$RELEASE_TAG" \
-            --arg author "$RELEASE_AUTHOR" \
-            --arg repo "$REPO_NAME" \
-            '{
-              embeds: [{
-                title: $title,
-                url: $url,
-                description: $desc,
-                color: 3066993,
-                fields: [
-                  {name: "Tag", value: $tag, inline: true},
-                  {name: "Author", value: $author, inline: true},
-                  {name: "Repository", value: $repo, inline: true}
-                ]
-              }]
-            }' > payload.json
-
-          curl -s -o response.txt -w "%{http_code}" \
-            -H "Content-Type: application/json" \
-            -d @payload.json \
-            "$DISCORD_WEBHOOK" > status.txt
-
-          echo "Status: $(cat status.txt)"
-          echo "Response: $(cat response.txt)"
+        uses: tsickert/discord-webhook@v6.0.0
+        with:
+          webhook-url: ${{ secrets.DISCORD_WEBHOOK }}
+          embed-title: ${{ github.event.release.name || github.event.release.tag_name }}
+          embed-description: ${{ github.event.release.body }}
+          embed-url: ${{ github.event.release.html_url }}
+          embed-color: 3066993
